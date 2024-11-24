@@ -5,7 +5,7 @@ const multer = require('multer');
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { trainModel, getHistoricalData, predict } = require('./recomendacion'); // Importar el sistema de recomendación
+const {  trainModel, getHistoricalData, predictNext, predictMultipleDays  } = require('./recomendacion'); // Importar el sistema de recomendación
 require('dotenv').config();
 
 const app = express();
@@ -134,10 +134,14 @@ app.get('/datos-usuario', verifyToken, async (req, res) => {
 
 // Ruta para obtener recomendaciones para múltiples empresas
 app.post('/recomendaciones', verifyToken, async (req, res) => {
-    const { tickers } = req.body;
+    const { tickers, days } = req.body;
 
     if (!Array.isArray(tickers) || tickers.length === 0) {
         return res.status(400).json({ message: 'Se debe proporcionar una lista de tickers válida' });
+    }
+
+    if (!days || days <= 0) {
+        return res.status(400).json({ message: 'Se debe proporcionar un número válido de días' });
     }
 
     try {
@@ -146,20 +150,22 @@ app.post('/recomendaciones', verifyToken, async (req, res) => {
         for (const ticker of tickers) {
             try {
                 const data = await getHistoricalData(ticker);
-                const model = await trainModel(data);
+                const { model, max, min } = await trainModel(data);
                 const lastPrice = data[data.length - 1].close;
-                const prediction = predict(model, lastPrice);
+
+                // Predecir para múltiples días
+                const futurePredictions = predictMultipleDays(model, lastPrice, max, min, days);
 
                 recommendations.push({
                     ticker,
                     lastPrice,
-                    prediction,
+                    futurePredictions,
                 });
             } catch (error) {
-                console.error(`Error procesando el ticker ${ticker}:`, error);
+                console.error(`Error procesando el ticker ${ticker}:`, error.message);
                 recommendations.push({
                     ticker,
-                    error: `No se pudo generar la recomendación para ${ticker}`,
+                    error: `No se pudo generar la recomendación para ${ticker}: ${error.message}`,
                 });
             }
         }
@@ -168,6 +174,73 @@ app.post('/recomendaciones', verifyToken, async (req, res) => {
     } catch (error) {
         console.error('Error al generar recomendaciones:', error);
         res.status(500).json({ message: 'Error al generar recomendaciones' });
+    }
+});
+
+app.post('/recomendaciones-usuario', verifyToken, async (req, res) => {
+    try {
+        const { salario, gastos } = req.body;
+
+        if (!salario || !gastos || salario <= 0 || gastos < 0) {
+            return res.status(400).json({ message: 'Salario y gastos deben ser valores válidos' });
+        }
+
+        // Calcular el monto disponible para inversión
+        const disponibleParaInvertir = salario - gastos;
+        if (disponibleParaInvertir <= 0) {
+            return res.status(400).json({ message: 'No hay suficiente dinero disponible para invertir' });
+        }
+
+        // Obtener empresas desde la base de datos
+        const empresas = await pool.query('SELECT id_empresa, nombre, ticker FROM public.tc_empresas;');
+
+        if (empresas.rows.length === 0) {
+            return res.status(404).json({ message: 'No hay empresas disponibles para recomendar' });
+        }
+
+        const recomendaciones = [];
+
+        // Procesar cada empresa
+        for (const empresa of empresas.rows) {
+            try {
+                // Obtener datos históricos y entrenar modelo
+                const data = await getHistoricalData(empresa.ticker);
+                const { model, max, min } = await trainModel(data);
+
+                // Obtener el precio actual y predecir rendimiento
+                const lastPrice = data[data.length - 1].close;
+                const rendimientoEsperado = predictNext(model, lastPrice, max, min);
+
+                recomendaciones.push({
+                    empresa: empresa.nombre,
+                    ticker: empresa.ticker,
+                    precio_actual: lastPrice,
+                    rendimiento: rendimientoEsperado,
+                });
+            } catch (error) {
+                console.error(`Error procesando el ticker ${empresa.ticker}:`, error.message);
+            }
+        }
+
+        // Ordenar recomendaciones por rendimiento esperado (descendente)
+        recomendaciones.sort((a, b) => b.rendimiento - a.rendimiento);
+
+        // Calcular monto por empresa
+        const montoPorEmpresa = disponibleParaInvertir / recomendaciones.length;
+
+        // Agregar monto recomendado a las recomendaciones
+        const recomendacionesConMontos = recomendaciones.map((rec) => ({
+            ...rec,
+            monto_recomendado: montoPorEmpresa,
+        }));
+
+        res.status(200).json({
+            disponible_para_invertir: disponibleParaInvertir,
+            recomendaciones: recomendacionesConMontos,
+        });
+    } catch (error) {
+        console.error('Error al generar recomendaciones de usuario:', error.message);
+        res.status(500).json({ message: 'Error al generar recomendaciones de usuario' });
     }
 });
 
