@@ -31,7 +31,7 @@ const trainModel = async (data) => {
 
     model.compile({ optimizer: 'adam', loss: 'meanSquaredError' });
 
-    await model.fit(inputTensor, outputTensor, { epochs: 100 });
+    await model.fit(inputTensor, outputTensor, { epochs: 10 });
 
     return { model, max, min };
 };
