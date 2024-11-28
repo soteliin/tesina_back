@@ -38,7 +38,14 @@ const trainModel = async (data) => {
 
 // Obtener datos históricos
 const getHistoricalData = async (ticker) => {
-    const queryOptions = { period1: '2010-01-01', period2: '2024-11-23', interval: '1d' };
+    const today = new Date();
+    const formattedToday = today.toISOString().split('T')[0]; // Formato 'YYYY-MM-DD'
+
+    const queryOptions = {
+        period1: '2010-01-01',
+        period2: formattedToday, // Usar la fecha actual del sistema
+        interval: '1d'
+    };
 
     const result = await yahooFinance.historical(ticker, queryOptions);
 
@@ -48,6 +55,7 @@ const getHistoricalData = async (ticker) => {
 
     return result;
 };
+
 
 // Predecir el próximo valor
 const predictNext = (model, currentPrice, max, min) => {
@@ -78,7 +86,5 @@ const predictMultipleDays = (model, lastPrice, max, min, days) => {
 
     return predictions;
 };
-
-
 
 module.exports = { trainModel, getHistoricalData, predictNext, predictMultipleDays };
