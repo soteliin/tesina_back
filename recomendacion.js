@@ -57,6 +57,8 @@ const getHistoricalData = async (ticker) => {
 };
 
 
+
+
 // Predecir el próximo valor
 const predictNext = (model, currentPrice, max, min) => {
     const normalizedPrice = (currentPrice - min) / (max - min);
