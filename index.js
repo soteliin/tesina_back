@@ -755,6 +755,29 @@ app.get('/analisis-guardados', verifyToken, async (req, res) => {
     }
 });
 
+app.delete('/analisis/:id', verifyToken, async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const verifyResult = await pool.query(
+            'SELECT id_accion FROM public.tr_accion WHERE id_accion = $1 AND usuario_id = $2',
+            [id, req.userId]
+        );
+
+        if (verifyResult.rows.length === 0) {
+            return res.status(404).json({ message: "Análisis no encontrado o no autorizado" });
+        }
+
+        await pool.query('DELETE FROM public.tr_accion WHERE id_accion = $1', [id]);
+
+        res.status(200).json({ message: "Análisis eliminado exitosamente" });
+    } catch (error) {
+        console.error('Error al eliminar el análisis:', error);
+        res.status(500).json({ message: "Error al eliminar el análisis" });
+    }
+});
+
+
 app.delete('/usuario/eliminar', verifyToken, async (req, res) => {
     try {
         await pool.query(
